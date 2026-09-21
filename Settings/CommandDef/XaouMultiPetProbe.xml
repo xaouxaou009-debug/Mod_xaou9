@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CommandTypes>
+  <List>
+    <CommandType Name="GoToActiveLcBuild" Class="CommandMoveThingTo">
+      <Single>1</Single>
+      <SParam>GameMain:GetMod("XaouMultiPetProbe"):ActivePetStatue(it)</SParam>
+      <SParam2>前往激活雕像</SParam2>
+    </CommandType>
+  </List>
+</CommandTypes>

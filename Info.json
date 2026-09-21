@@ -1,0 +1,9 @@
+{
+  "Name": "XaouMultiPetProbe",
+  "DisplayName": "Xaou - Multi Pet Probe",
+  "Desc": "เครื่องมือทดลองตรวจระบบสัตว์เลี้ยงหลายตัว เก็บสถานะ LingShouMgr ก่อนและหลังเปิดใช้งานรูปปั้นสัตว์เลี้ยง โดยไม่ตั้งใจเปลี่ยนพฤติกรรมเกม",
+  "GameVersion": 0.95,
+  "Version": 1,
+  "Author": "Xaou",
+  "Sort": "99999"
+}
