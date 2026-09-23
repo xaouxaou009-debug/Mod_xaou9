@@ -116,10 +116,10 @@ local function ensure_log_file()
             local p = IO.Path.Combine(dir, "XaouMultiPetProbe.log")
             IO.File.WriteAllText(
                 p,
-                "Xaou Multi Pet Probe v0.3\\r\\n"
-                .. "Started: " .. timestamp() .. "\\r\\n"
-                .. "LogPath: " .. tostring(p) .. "\\r\\n"
-                .. "============================================================\\r\\n"
+                "Xaou Multi Pet Probe v0.3\r\n"
+                .. "Started: " .. timestamp() .. "\r\n"
+                .. "LogPath: " .. tostring(p) .. "\r\n"
+                .. "============================================================\r\n"
             )
             return p
         end)
