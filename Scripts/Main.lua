@@ -1,6 +1,6 @@
--- Xaou Multi Pet Probe v0.10
+-- Xaou Multi Pet Probe v0.11
 -- Observes LingShouMgr when a pet statue is activated.
--- v0.10 restores the previous pet shortly after a switch without waiting for the new pet's Key, which stays 0 on Android.
+-- v0.11 fixes MethodInfo.Invoke overload selection on XLua and restores the previous pet using waitSwitchNpc StoneData directly.
 -- Experimental Multi Pet test: uses the game's own running-pet API; no direct HashSet writes.
 
 local mod = GameMain:NewMod("XaouMultiPetProbe")
@@ -134,7 +134,7 @@ local function ensure_log_file()
             local p = IO.Path.Combine(dir, "XaouMultiPetProbe.log")
             IO.File.WriteAllText(
                 p,
-                "Xaou Multi Pet Probe v0.10\r\n"
+                "Xaou Multi Pet Probe v0.11\r\n"
                 .. "Started: " .. timestamp() .. "\r\n"
                 .. "LogPath: " .. tostring(p) .. "\r\n"
                 .. "PersistentDataPath: " .. safe_tostring(CS.UnityEngine.Application.persistentDataPath) .. "\r\n"
@@ -742,13 +742,39 @@ local function invoke_mgr_method(methodName, args)
         for i = 1, #args do
             arr:SetValue(args[i], i - 1)
         end
-        return m:Invoke(mgr, arr)
+
+        -- XLua may choose MethodInfo.Invoke(object, BindingFlags, Binder, object[], CultureInfo)
+        -- even when the 2-argument overload was intended. Call the 5-argument overload
+        -- explicitly so Object[] is never miscast as BindingFlags.
+        local invokeFlags = CS.System.Enum.ToObject(
+            typeof(CS.System.Reflection.BindingFlags),
+            0
+        )
+        return m:Invoke(mgr, invokeFlags, nil, arr, nil)
     end)
 
     if ok then
         return true, result, nil
     end
     return false, nil, safe_tostring(result)
+end
+
+local function first_wait_switch_stone()
+    local list = get_field_value("waitSwitchNpc")
+    if list == nil then return nil end
+
+    local okCount, count = pcall(function() return tonumber(list.Count) end)
+    if not okCount or count == nil or count <= 0 then return nil end
+
+    local okEnum, enum = pcall(function() return list:GetEnumerator() end)
+    if not okEnum or enum == nil then return nil end
+
+    local okMove, has = pcall(function() return enum:MoveNext() end)
+    if not okMove or not has then return nil end
+
+    local okCurrent, current = pcall(function() return enum.Current end)
+    if okCurrent then return current end
+    return nil
 end
 
 local function npc_key(npc)
@@ -796,18 +822,18 @@ local function process_pending_restore()
     log("  running count before = " .. tostring(running_count()))
 
     if npc_key(previous) <= 0 then
-        local okFind, stoneData, findErr = invoke_mgr_method("FindStoneData", { previous })
-        if not okFind or stoneData == nil then
+        local stoneData = first_wait_switch_stone()
+        if stoneData == nil then
             if pendingRestoreElapsed >= PENDING_RESTORE_TIMEOUT then
-                log("MULTIPET ERROR FindStoneData timeout: " .. safe_tostring(findErr))
+                log("MULTIPET ERROR waitSwitchNpc StoneData timeout")
                 clear_pending_restore()
             else
-                log("MULTIPET FindStoneData not ready yet; retrying")
+                log("MULTIPET waitSwitchNpc StoneData not ready yet; retrying")
             end
             return
         end
 
-        log("MULTIPET FindStoneData OK: " .. object_identity(stoneData))
+        log("MULTIPET waitSwitchNpc StoneData acquired: " .. object_identity(stoneData))
 
         local okReborn, _, rebornErr = invoke_mgr_method("RebornFromStone", { stoneData })
         if not okReborn then
@@ -816,7 +842,7 @@ local function process_pending_restore()
             return
         end
 
-        log("MULTIPET RebornFromStone(previous) OK; key now=" .. tostring(npc_key(previous)))
+        log("MULTIPET RebornFromStone(previous stone) OK; previous key now=" .. tostring(npc_key(previous)))
     else
         log("MULTIPET previous pet is still on map; RebornFromStone not needed")
     end
@@ -1000,7 +1026,7 @@ end
 
 function mod:OnInit()
     ensure_log_file()
-    log("v0.10 loaded")
+    log("v0.11 loaded")
     if logFilePath ~= nil then
         log("Writing probe output to: " .. tostring(logFilePath))
     else
@@ -1009,7 +1035,7 @@ function mod:OnInit()
 end
 
 function mod:OnAfterLoad()
-    log("save/map loaded; v0.10 direct active-pet watch + immediate stone restore enabled")
+    log("save/map loaded; v0.11 waitSwitchNpc stone restore enabled")
     dump_structure_once()
     dump_active_container_api()
     watchSnapshot = nil
