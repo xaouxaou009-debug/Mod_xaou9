@@ -1,6 +1,6 @@
--- Xaou Multi Pet Probe v0.9
+-- Xaou Multi Pet Probe v0.10
 -- Observes LingShouMgr when a pet statue is activated.
--- v0.9 invokes LingShouMgr non-public methods through reflection and restores the previous pet from its stone state after the new pet finishes spawning.
+-- v0.10 restores the previous pet shortly after a switch without waiting for the new pet's Key, which stays 0 on Android.
 -- Experimental Multi Pet test: uses the game's own running-pet API; no direct HashSet writes.
 
 local mod = GameMain:NewMod("XaouMultiPetProbe")
@@ -19,6 +19,7 @@ local pendingPreviousNpc = nil
 local pendingNewNpc = nil
 local pendingRestoreElapsed = 0
 local PENDING_RESTORE_TIMEOUT = 8.0
+local RESTORE_DELAY = 1.0
 
 local WATCH_FIELDS = {
     ["runningLss"] = true,
@@ -133,7 +134,7 @@ local function ensure_log_file()
             local p = IO.Path.Combine(dir, "XaouMultiPetProbe.log")
             IO.File.WriteAllText(
                 p,
-                "Xaou Multi Pet Probe v0.9\r\n"
+                "Xaou Multi Pet Probe v0.10\r\n"
                 .. "Started: " .. timestamp() .. "\r\n"
                 .. "LogPath: " .. tostring(p) .. "\r\n"
                 .. "PersistentDataPath: " .. safe_tostring(CS.UnityEngine.Application.persistentDataPath) .. "\r\n"
@@ -767,7 +768,7 @@ local function schedule_previous_restore(previousNpc, newNpc)
     log("  new      = " .. object_identity(newNpc))
     log("  previous key = " .. tostring(npc_key(previousNpc)))
     log("  new key      = " .. tostring(npc_key(newNpc)))
-    log("  waiting for new pet to finish spawning before restoring previous pet")
+    log("  restoring previous pet after short switch delay; Android keeps selected new pet Key=0")
 end
 
 local function clear_pending_restore()
@@ -782,12 +783,7 @@ local function process_pending_restore()
 
     pendingRestoreElapsed = pendingRestoreElapsed + WATCH_INTERVAL
 
-    local newKey = npc_key(pendingNewNpc)
-    if newKey <= 0 then
-        if pendingRestoreElapsed >= PENDING_RESTORE_TIMEOUT then
-            log("MULTIPET restore timeout: new pet never received a map Key")
-            clear_pending_restore()
-        end
+    if pendingRestoreElapsed < RESTORE_DELAY then
         return
     end
 
@@ -802,8 +798,12 @@ local function process_pending_restore()
     if npc_key(previous) <= 0 then
         local okFind, stoneData, findErr = invoke_mgr_method("FindStoneData", { previous })
         if not okFind or stoneData == nil then
-            log("MULTIPET ERROR FindStoneData: " .. safe_tostring(findErr))
-            clear_pending_restore()
+            if pendingRestoreElapsed >= PENDING_RESTORE_TIMEOUT then
+                log("MULTIPET ERROR FindStoneData timeout: " .. safe_tostring(findErr))
+                clear_pending_restore()
+            else
+                log("MULTIPET FindStoneData not ready yet; retrying")
+            end
             return
         end
 
@@ -1000,7 +1000,7 @@ end
 
 function mod:OnInit()
     ensure_log_file()
-    log("v0.9 loaded")
+    log("v0.10 loaded")
     if logFilePath ~= nil then
         log("Writing probe output to: " .. tostring(logFilePath))
     else
@@ -1009,7 +1009,7 @@ function mod:OnInit()
 end
 
 function mod:OnAfterLoad()
-    log("save/map loaded; direct active-pet watch + experimental Multi Pet enabled")
+    log("save/map loaded; v0.10 direct active-pet watch + immediate stone restore enabled")
     dump_structure_once()
     dump_active_container_api()
     watchSnapshot = nil
