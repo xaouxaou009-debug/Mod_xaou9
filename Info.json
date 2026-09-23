@@ -1,9 +1,9 @@
 {
   "Name": "XaouMultiPetProbe",
   "DisplayName": "Xaou - Multi Pet Probe",
-  "Desc": "ทดสอบ Multi Pet บน Android โดยใช้ API ของเกมเอง เมื่อสลับสัตว์เลี้ยงจะพยายามเก็บตัวก่อนหน้าไว้ใน runningLss ด้วย AddNpc2Running(previous, false) พร้อมบันทึกผลลง log",
+  "Desc": "ทดลอง Multi Pet บน Android v0.9 เรียกเมธอด non-public ของ LingShouMgr ผ่าน reflection และคืนสัตว์เลี้ยงตัวก่อนหน้าจาก Stone หลังตัวใหม่เกิดเสร็จ จากนั้นเพิ่มกลับเข้า runningLss โดยไม่เปลี่ยนตัวหลัก",
   "GameVersion": 0.95,
-  "Version": 8,
+  "Version": 9,
   "Author": "Xaou",
   "Sort": "99999"
 }
