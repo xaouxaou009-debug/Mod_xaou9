@@ -1,7 +1,7 @@
--- Xaou Multi Pet Probe v0.7
+-- Xaou Multi Pet Probe v0.8
 -- Observes LingShouMgr when a pet statue is activated.
--- v0.7 inspects the active-pet container API and relevant LingShouMgr method signatures.
--- This probe does NOT intentionally remove the one-active-pet limit.
+-- v0.8 experimentally preserves the previous pet with LingShouMgr:AddNpc2Running(npc, false).
+-- Experimental Multi Pet test: uses the game's own running-pet API; no direct HashSet writes.
 
 local mod = GameMain:NewMod("XaouMultiPetProbe")
 
@@ -13,6 +13,8 @@ local logFileReady = false
 local WATCH_INTERVAL = 0.5
 local watchElapsed = 0
 local watchSnapshot = nil
+local lastMainNpc = nil
+local MULTIPET_EXPERIMENT = true
 
 local WATCH_FIELDS = {
     ["runningLss"] = true,
@@ -127,7 +129,7 @@ local function ensure_log_file()
             local p = IO.Path.Combine(dir, "XaouMultiPetProbe.log")
             IO.File.WriteAllText(
                 p,
-                "Xaou Multi Pet Probe v0.7\r\n"
+                "Xaou Multi Pet Probe v0.8\r\n"
                 .. "Started: " .. timestamp() .. "\r\n"
                 .. "LogPath: " .. tostring(p) .. "\r\n"
                 .. "PersistentDataPath: " .. safe_tostring(CS.UnityEngine.Application.persistentDataPath) .. "\r\n"
@@ -621,6 +623,137 @@ local function log_changes(before, after)
     end
 end
 
+local function get_field_value(fieldName)
+    local inst = get_instance()
+    local fields = get_fields()
+    if inst == nil or fields == nil then return nil end
+
+    for i = 0, fields.Length - 1 do
+        local f = fields[i]
+        if safe_tostring(f.Name) == fieldName then
+            local ok, value = pcall(function() return f:GetValue(inst) end)
+            if ok then return value end
+            return nil
+        end
+    end
+    return nil
+end
+
+local function get_running_set()
+    local hashList = get_field_value("runningLss")
+    if hashList == nil then return nil end
+
+    local okType, t = pcall(function() return hashList:GetType() end)
+    if not okType or t == nil then return nil end
+
+    local flags = get_flags()
+    local okField, vf
+    if flags ~= nil then
+        okField, vf = pcall(function() return t:GetField("v", flags) end)
+    else
+        okField, vf = pcall(function() return t:GetField("v") end)
+    end
+    if not okField or vf == nil then return nil end
+
+    local okValue, set = pcall(function() return vf:GetValue(hashList) end)
+    if okValue then return set end
+    return nil
+end
+
+local function running_count()
+    local set = get_running_set()
+    if set == nil then return -1 end
+    local ok, count = pcall(function() return tonumber(set.Count) end)
+    if ok and count ~= nil then return count end
+    return -1
+end
+
+local function running_contains(npc)
+    if npc == nil then return false end
+    local set = get_running_set()
+    if set == nil then return false end
+
+    local ok, yes = pcall(function() return set:Contains(npc) end)
+    return ok and yes == true
+end
+
+local function get_main_running()
+    local mgr = get_instance()
+    if mgr == nil then return nil end
+
+    local ok, npc = pcall(function() return mgr.runningLs end)
+    if ok then return npc end
+
+    return get_field_value("<runningLs>k__BackingField")
+end
+
+local function npc_id(npc)
+    if npc == nil then return "<nil>" end
+    local id = safe_member(npc, "ID")
+    if id == nil then id = safe_member(npc, "Id") end
+    if id == nil then id = safe_member(npc, "id") end
+    return safe_tostring(id)
+end
+
+local function preserve_previous_running(previousNpc, newNpc)
+    if not MULTIPET_EXPERIMENT then return end
+    if previousNpc == nil or newNpc == nil then return end
+    if previousNpc == newNpc then return end
+
+    local mgr = get_instance()
+    if mgr == nil then return end
+
+    log("=== MULTIPET switch detected ===")
+    log("  previous = " .. object_identity(previousNpc))
+    log("  new      = " .. object_identity(newNpc))
+    log("  running count before = " .. tostring(running_count()))
+    log("  previous already running = " .. tostring(running_contains(previousNpc)))
+
+    if not running_contains(previousNpc) then
+        local ok, err = pcall(function()
+            mgr:AddNpc2Running(previousNpc, false)
+        end)
+
+        if ok then
+            log("MULTIPET AddNpc2Running(previous, false) OK; npcID=" .. npc_id(previousNpc))
+        else
+            log("MULTIPET ERROR AddNpc2Running: " .. safe_tostring(err))
+        end
+    else
+        log("MULTIPET previous pet was already in runningLss; no add needed")
+    end
+
+    log("  running count after  = " .. tostring(running_count()))
+    log("  previous now running = " .. tostring(running_contains(previousNpc)))
+
+    local sorted = get_field_value("SortedRunningLss")
+    if sorted ~= nil then
+        log("  SortedRunningLss after = " .. snapshot_value(sorted))
+    end
+    log("=== MULTIPET switch handling end ===")
+end
+
+local function multi_pet_step()
+    if not MULTIPET_EXPERIMENT then return end
+
+    local current = get_main_running()
+    if current == nil then
+        return
+    end
+
+    if lastMainNpc == nil then
+        lastMainNpc = current
+        log("MULTIPET main initialized: " .. object_identity(current))
+        return
+    end
+
+    if current ~= lastMainNpc then
+        local previous = lastMainNpc
+        lastMainNpc = current
+        preserve_previous_running(previous, current)
+    end
+end
+
 local function snapshot_watch_fields()
     local values = {}
     local inst = get_instance()
@@ -747,7 +880,7 @@ end
 
 function mod:OnInit()
     ensure_log_file()
-    log("v0.7 loaded")
+    log("v0.8 loaded")
     if logFilePath ~= nil then
         log("Writing probe output to: " .. tostring(logFilePath))
     else
@@ -756,12 +889,14 @@ function mod:OnInit()
 end
 
 function mod:OnAfterLoad()
-    log("save/map loaded; direct active-pet watch enabled")
+    log("save/map loaded; direct active-pet watch + experimental Multi Pet enabled")
     dump_structure_once()
     dump_active_container_api()
     watchSnapshot = nil
     watchElapsed = 0
+    lastMainNpc = nil
     poll_active_pet_watch()
+    multi_pet_step()
 end
 
 function mod:OnStep(dt)
@@ -772,8 +907,9 @@ function mod:OnStep(dt)
 
     local ok, err = pcall(function()
         poll_active_pet_watch()
+        multi_pet_step()
     end)
     if not ok then
-        log("WATCH ERROR: " .. safe_tostring(err))
+        log("WATCH/MULTIPET ERROR: " .. safe_tostring(err))
     end
 end
