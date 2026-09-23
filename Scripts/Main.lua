@@ -1,6 +1,6 @@
--- Xaou Multi Pet Probe v0.2
+-- Xaou Multi Pet Probe v0.3
 -- Observes LingShouMgr when a pet statue is activated.
--- v0.2 detects List/Dictionary/Array content changes and writes a log file.
+-- v0.3 detects collections and locates both local Mods and Steam Workshop installs.
 -- This probe does NOT intentionally remove the one-active-pet limit.
 
 local mod = GameMain:NewMod("XaouMultiPetProbe")
@@ -26,62 +26,111 @@ local function timestamp()
     return "time?"
 end
 
-local function find_mod_folder()
+local function info_matches_mod(dir)
+    local ok, matched = pcall(function()
+        local IO = CS.System.IO
+        local infoPath = IO.Path.Combine(dir, "Info.json")
+        if not IO.File.Exists(infoPath) then return false end
+
+        local info = IO.File.ReadAllText(infoPath)
+        return info ~= nil
+            and string.find(tostring(info), "\"Name\"", 1, true) ~= nil
+            and string.find(tostring(info), "XaouMultiPetProbe", 1, true) ~= nil
+    end)
+
+    return ok and matched == true
+end
+
+local function find_matching_child(root)
     local ok, result = pcall(function()
         local IO = CS.System.IO
-        local gameRoot = IO.Path.GetDirectoryName(CS.UnityEngine.Application.dataPath)
-        local modsRoot = IO.Path.Combine(gameRoot, "Mods")
+        if root == nil or not IO.Directory.Exists(root) then return nil end
 
-        if not IO.Directory.Exists(modsRoot) then
-            return gameRoot
-        end
-
-        local dirs = IO.Directory.GetDirectories(modsRoot)
+        local dirs = IO.Directory.GetDirectories(root)
         for i = 0, dirs.Length - 1 do
-            local dir = dirs[i]
-            local infoPath = IO.Path.Combine(dir, "Info.json")
-            if IO.File.Exists(infoPath) then
-                local readOk, info = pcall(function()
-                    return IO.File.ReadAllText(infoPath)
-                end)
-                if readOk and info ~= nil
-                    and string.find(tostring(info), "XaouMultiPetProbe", 1, true) then
-                    return dir
-                end
+            if info_matches_mod(dirs[i]) then
+                return dirs[i]
             end
         end
-
-        return modsRoot
+        return nil
     end)
 
     if ok then return result end
     return nil
 end
 
+local function get_log_candidates()
+    local result = {}
+
+    pcall(function()
+        local IO = CS.System.IO
+        local gameRoot = IO.Path.GetDirectoryName(CS.UnityEngine.Application.dataPath)
+        local modsRoot = IO.Path.Combine(gameRoot, "Mods")
+
+        local localMod = find_matching_child(modsRoot)
+        if localMod ~= nil then
+            result[#result + 1] = localMod
+        end
+
+        -- gameRoot = ...\\steamapps\\common\\AmazingCultivationSimulator
+        local commonRoot = IO.Path.GetDirectoryName(gameRoot)
+        local steamappsRoot = IO.Path.GetDirectoryName(commonRoot)
+        local workshopRoot = IO.Path.Combine(
+            IO.Path.Combine(
+                IO.Path.Combine(steamappsRoot, "workshop"),
+                "content"
+            ),
+            "955900"
+        )
+
+        local workshopMod = find_matching_child(workshopRoot)
+        if workshopMod ~= nil then
+            result[#result + 1] = workshopMod
+        end
+
+        if IO.Directory.Exists(modsRoot) then
+            result[#result + 1] = modsRoot
+        end
+
+        local persistent = CS.UnityEngine.Application.persistentDataPath
+        if persistent ~= nil and tostring(persistent) ~= "" then
+            result[#result + 1] = tostring(persistent)
+        end
+
+        result[#result + 1] = gameRoot
+    end)
+
+    return result
+end
+
 local function ensure_log_file()
     if logFileReady then return logFilePath end
     logFileReady = true
 
-    local ok, path = pcall(function()
-        local IO = CS.System.IO
-        local dir = find_mod_folder()
-        if dir == nil then return nil end
+    local candidates = get_log_candidates()
+    for _, dir in ipairs(candidates) do
+        local ok, path = pcall(function()
+            local IO = CS.System.IO
+            if dir == nil or not IO.Directory.Exists(dir) then return nil end
 
-        local p = IO.Path.Combine(dir, "XaouMultiPetProbe.log")
-        IO.File.WriteAllText(
-            p,
-            "Xaou Multi Pet Probe v0.2\r\n"
-            .. "Started: " .. timestamp() .. "\r\n"
-            .. "LogPath: " .. tostring(p) .. "\r\n"
-            .. "============================================================\r\n"
-        )
-        return p
-    end)
+            local p = IO.Path.Combine(dir, "XaouMultiPetProbe.log")
+            IO.File.WriteAllText(
+                p,
+                "Xaou Multi Pet Probe v0.3\\r\\n"
+                .. "Started: " .. timestamp() .. "\\r\\n"
+                .. "LogPath: " .. tostring(p) .. "\\r\\n"
+                .. "============================================================\\r\\n"
+            )
+            return p
+        end)
 
-    if ok then
-        logFilePath = path
+        if ok and path ~= nil then
+            logFilePath = path
+            return logFilePath
+        end
     end
-    return logFilePath
+
+    return nil
 end
 
 local function append_log_line(line)
@@ -421,7 +470,7 @@ end
 
 function mod:OnInit()
     ensure_log_file()
-    log("v0.2 loaded")
+    log("v0.3 loaded")
     if logFilePath ~= nil then
         log("Writing probe output to: " .. tostring(logFilePath))
     else
