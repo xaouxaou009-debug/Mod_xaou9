@@ -1,34 +1,47 @@
-Xaou - Multi Pet Probe v0.7
+Xaou - Multi Pet Probe v0.8
 ===========================
 
-ผลจาก v0.6
-- ระบบมีสัตว์เลี้ยง 2 ตัวจริงใน LsNpcs และ raceLs
-- แต่ SortedRunningLss มีเพียง 1 ตัว
-- <runningLs>k__BackingField ชี้สัตว์เลี้ยง active ได้ทีละตัว
-- ตอนสลับสัตว์เลี้ยง ตัวเกมเปลี่ยน runningLs และ waitSwitchNpc โดยไม่ได้ลบอีกตัวจาก LsNpcs
+ผลจาก v0.7
+- runningLss เป็น LingShouMgr.HashList<Npc>
+- ภายในใช้ HashSet<Npc>
+- มี API AddNpc / RemoveNpc
+- LingShouMgr มี API:
+  AddNpc2Running(Npc npc, bool updateMain)
+  RemoveNpcFromRunning(Npc npc)
+  UpdateMainRunningLs()
+- SortedRunningLss เป็น List<Npc> ปกติ
 
-v0.7 เพิ่มการตรวจ:
-- runtime fields/properties/methods ของ runningLss
-- runtime API ของ SortedRunningLss และ waitSwitchNpc
-- method signature ของ LingShouMgr ที่เกี่ยวกับ run/active/switch/born/stone/build/remove
-- เน้นดู Add / Remove / Clear / Count / Contains / get / set / sort / enumerator
+v0.8 เริ่มทดสอบ Multi Pet ตัวจริงแบบเสี่ยงต่ำ:
+- ไม่แก้ HashSet โดยตรง
+- ไม่แก้ save data โดยตรง
+- ตอน main pet เปลี่ยนจากตัวเก่าเป็นตัวใหม่
+  จะเรียก:
+  LingShouMgr.Instance:AddNpc2Running(previousPet, false)
+- false หมายถึงไม่ตั้งตัวเก่ากลับเป็น main pet
+- ตัวใหม่ยังเป็น main pet ตามระบบเกม
+
+ก่อนทดสอบ
+- สำรองเซฟไว้ก่อน
+- เวอร์ชันนี้เป็น Experimental
+- ถ้าเกมค้าง/สัตว์เลี้ยงหาย/AI แปลก ให้ปิดม็อดแล้วโหลดเซฟสำรอง
 
 วิธีทดสอบ
-1) อัปเดตม็อดเป็น Version 7
+1) อัปเดตม็อดเป็น Version 8
 2) ปิดเกมแล้วเปิดใหม่
 3) โหลดเซฟ
-4) รอประมาณ 2 วินาที
-5) เรียกสัตว์เลี้ยงตัวแรก
-6) รอ 2-3 วินาที
-7) เรียกสัตว์เลี้ยงตัวที่สอง
-8) ส่ง XaouMultiPetProbe.log มาให้ตรวจ
+4) เรียกสัตว์เลี้ยงตัวแรก รอ 2-3 วินาที
+5) เรียกสัตว์เลี้ยงตัวที่สอง รอ 3-5 วินาที
+6) ดูว่า "ตัวแรกยังอยู่และทำงานต่อ" พร้อมกับตัวที่สองหรือไม่
+7) ส่ง XaouMultiPetProbe.log มาให้ตรวจ
 
-บรรทัดสำคัญรอบนี้:
-- === RUNTIME TYPE runningLss ...
-- RUNTIME FIELD ...
-- RUNTIME PROP ...
-- RUNTIME METHOD ...
-- === LingShouMgr relevant method signatures ===
-- SIG ...
+บรรทัดที่ต้องดู:
+- === MULTIPET switch detected ===
+- MULTIPET AddNpc2Running(previous, false) OK
+- running count before
+- running count after
+- previous now running
+- SortedRunningLss after
 
-ยังไม่แก้ค่า active-pet โดยตรงในเวอร์ชันนี้ เพื่อเลี่ยงทำ state/AI/เซฟเสียก่อนรู้ API ของ HashList ชัดเจน
+ถ้า running count after = 2 และ previous now running = true
+แปลว่าระบบ Running หลายตัวสำเร็จในระดับ manager แล้ว
+จากนั้นค่อยตรวจว่าตัวเก่าถูกคืนจากสถานะรูปปั้น/AI ครบหรือยัง
