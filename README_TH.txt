@@ -1,40 +1,43 @@
-Xaou - Multi Pet Probe v0.10
+Xaou - Multi Pet Probe v0.11
 ============================
 
-ผลจาก v0.9
-- ตรวจพบการสลับสัตว์เลี้ยงได้ถูกต้อง
-- ตัวเก่าถูกส่งเข้ารูปปั้นและ Key กลายเป็น 0
-- ตัวใหม่ถูกตั้งเป็น runningLs แต่ Key ของ NPC ใน LingShouMgr ยังคง 0
-- เพราะฉะนั้นเงื่อนไขเดิมที่รอ "ตัวใหม่มี Key > 0" ไม่มีวันผ่าน
-- v0.9 จึง timeout และไม่เคยเรียก RebornFromStone
+ผลจาก v0.10
+- ไม่ได้ติดที่ FindStoneData หาไม่เจอ
+- error จริงคือ XLua เลือก overload ของ MethodInfo.Invoke ผิด
+- Object[] ถูกพยายามแปลงเป็น System.Reflection.BindingFlags
+- log จึงขึ้น:
+  invalid value for enum System.Reflection.BindingFlags
 
-v0.10 แก้โดย:
-1) ตรวจพบการสลับ
-2) รอสั้น ๆ ให้ state ของเกมนิ่ง
-3) ใช้ reflection เรียก FindStoneData(previousPet)
-4) เรียก RebornFromStone(stoneData) เพื่อดึงตัวเก่ากลับออกจากรูปปั้น
-5) เรียก AddNpc2Running(previousPet, false)
-6) ตั้งตัวที่เพิ่งเลือกกลับเป็น main pet
+อีกจุดที่ยืนยันได้จาก log:
+- หลังสลับสัตว์เลี้ยง waitSwitchNpc มี LsStoneData 1 รายการ
+- รายการนี้เปลี่ยนตามตัวที่เพิ่งถูกส่งเข้ารูปปั้น
+- จึงไม่จำเป็นต้องเรียก FindStoneData อีก
+
+v0.11 แก้:
+1) เรียก MethodInfo.Invoke แบบ 5 arguments ชัดเจน
+   target + BindingFlags.Default + Binder(nil) + Object[] + CultureInfo(nil)
+2) อ่าน LsStoneData จาก waitSwitchNpc โดยตรง
+3) เรียก RebornFromStone(stoneData)
+4) เพิ่มตัวเก่ากลับ running ด้วย AddNpc2Running(previous, false)
+5) ตั้งตัวที่เลือกใหม่กลับเป็น main pet
 
 ก่อนทดสอบ
 - สำรองเซฟ
-- เวอร์ชันนี้เป็น Experimental
+- เวอร์ชันนี้ยังเป็น Experimental
 
 วิธีทดสอบ
-1) อัปเดตเป็น Version 10
+1) อัปเดตเป็น Version 11
 2) ปิดเกมแล้วเปิดใหม่
 3) โหลดเซฟ
-4) เรียกสัตว์เลี้ยงตัวแรก
-5) รอ 2-3 วินาที
-6) เรียกตัวที่สอง
-7) รอ 5-10 วินาที
-8) ดูว่าตัวแรกถูกดึงกลับออกมาหรือไม่ และทั้งสองตัวอยู่พร้อมกันหรือไม่
-9) ส่ง XaouMultiPetProbe.log มาให้ตรวจ
+4) เรียกตัวแรก รอ 2-3 วินาที
+5) เรียกตัวที่สอง รอ 5-10 วินาที
+6) ดูว่าตัวแรกกลับออกมาจากรูปปั้นหรือไม่
+7) ส่ง XaouMultiPetProbe.log มาให้ตรวจ
 
 บรรทัดสำคัญ:
-- MULTIPET FindStoneData OK
-- MULTIPET RebornFromStone(previous) OK
+- MULTIPET waitSwitchNpc StoneData acquired
+- MULTIPET RebornFromStone(previous stone) OK
 - MULTIPET reflection AddNpc2Running(previous, false) OK
 - running count after = 2
-- previous running = true
-- new running = true
+
+ถ้ายังล้ม ให้ดูบรรทัด MULTIPET ERROR RebornFromStone เป็นหลัก
