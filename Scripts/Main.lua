@@ -1,6 +1,6 @@
--- Xaou Multi Pet Probe v0.4
+-- Xaou Multi Pet Probe v0.5
 -- Observes LingShouMgr when a pet statue is activated.
--- v0.4 prioritizes Android/Unity writable storage, with desktop paths only as fallback.
+-- v0.5 keeps Android writable storage and replaces AppendAllText with a WriteAllText-safe logger.
 -- This probe does NOT intentionally remove the one-active-pet limit.
 
 local mod = GameMain:NewMod("XaouMultiPetProbe")
@@ -109,7 +109,7 @@ local function ensure_log_file()
             local p = IO.Path.Combine(dir, "XaouMultiPetProbe.log")
             IO.File.WriteAllText(
                 p,
-                "Xaou Multi Pet Probe v0.4\r\n"
+                "Xaou Multi Pet Probe v0.5\r\n"
                 .. "Started: " .. timestamp() .. "\r\n"
                 .. "LogPath: " .. tostring(p) .. "\r\n"
                 .. "PersistentDataPath: " .. safe_tostring(CS.UnityEngine.Application.persistentDataPath) .. "\r\n"
@@ -132,8 +132,16 @@ local function append_log_line(line)
     local path = ensure_log_file()
     if path == nil then return end
 
+    -- On the Android build used for testing, WriteAllText works while
+    -- AppendAllText may fail through the Lua/C# binding. Read + rewrite
+    -- is slower but reliable for this small diagnostic log.
     pcall(function()
-        CS.System.IO.File.AppendAllText(path, line .. "\r\n")
+        local IO = CS.System.IO
+        local current = ""
+        if IO.File.Exists(path) then
+            current = tostring(IO.File.ReadAllText(path))
+        end
+        IO.File.WriteAllText(path, current .. line .. "\r\n")
     end)
 end
 
@@ -465,7 +473,7 @@ end
 
 function mod:OnInit()
     ensure_log_file()
-    log("v0.4 loaded")
+    log("v0.5 loaded")
     if logFilePath ~= nil then
         log("Writing probe output to: " .. tostring(logFilePath))
     else
