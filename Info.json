@@ -1,9 +1,9 @@
 {
   "Name": "XaouMultiPetProbe",
   "DisplayName": "Xaou - Multi Pet Probe",
-  "Desc": "ทดลอง Multi Pet บน Android v0.10 หลังสลับสัตว์เลี้ยงจะคืนตัวก่อนหน้าจาก Stone ผ่าน reflection โดยไม่รอ Key ของตัวใหม่ เพราะบน Android ตัวที่ถูกเลือกใหม่คง Key=0",
+  "Desc": "ทดลอง Multi Pet บน Android v0.11 แก้ Reflection Invoke ของ XLua ให้เรียก overload ถูกต้อง และใช้ LsStoneData จาก waitSwitchNpc โดยตรงเพื่อคืนสัตว์เลี้ยงตัวก่อนหน้าออกจากรูปปั้น",
   "GameVersion": 0.95,
-  "Version": 10,
+  "Version": 11,
   "Author": "Xaou",
   "Sort": "99999"
 }
