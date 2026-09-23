@@ -1,9 +1,9 @@
 {
   "Name": "XaouMultiPetProbe",
   "DisplayName": "Xaou - Multi Pet Probe",
-  "Desc": "เครื่องมือทดลองตรวจระบบสัตว์เลี้ยงหลายตัว ตรวจ LingShouMgr และ collection ก่อน/หลังเปิดรูปปั้น พร้อมบันทึก XaouMultiPetProbe.log โดยให้พื้นที่เขียนของ Unity/Android มาก่อน",
+  "Desc": "เครื่องมือทดลองตรวจระบบสัตว์เลี้ยงหลายตัว ตรวจ LingShouMgr และ collection ก่อน/หลังเปิดรูปปั้น พร้อมบันทึก XaouMultiPetProbe.log สำหรับ Android โดยใช้วิธีเขียนไฟล์ที่รองรับตัวรันมือถือ",
   "GameVersion": 0.95,
-  "Version": 4,
+  "Version": 5,
   "Author": "Xaou",
   "Sort": "99999"
 }
