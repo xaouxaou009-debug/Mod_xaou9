@@ -1,9 +1,9 @@
 {
   "Name": "XaouMultiPetProbe",
   "DisplayName": "Xaou - Multi Pet Probe",
-  "Desc": "ทดลอง Multi Pet บน Android v0.9 เรียกเมธอด non-public ของ LingShouMgr ผ่าน reflection และคืนสัตว์เลี้ยงตัวก่อนหน้าจาก Stone หลังตัวใหม่เกิดเสร็จ จากนั้นเพิ่มกลับเข้า runningLss โดยไม่เปลี่ยนตัวหลัก",
+  "Desc": "ทดลอง Multi Pet บน Android v0.10 หลังสลับสัตว์เลี้ยงจะคืนตัวก่อนหน้าจาก Stone ผ่าน reflection โดยไม่รอ Key ของตัวใหม่ เพราะบน Android ตัวที่ถูกเลือกใหม่คง Key=0",
   "GameVersion": 0.95,
-  "Version": 9,
+  "Version": 10,
   "Author": "Xaou",
   "Sort": "99999"
 }
