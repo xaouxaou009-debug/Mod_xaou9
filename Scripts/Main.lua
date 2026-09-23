@@ -1,6 +1,6 @@
--- Xaou Multi Pet Probe v0.3
+-- Xaou Multi Pet Probe v0.4
 -- Observes LingShouMgr when a pet statue is activated.
--- v0.3 detects collections and locates both local Mods and Steam Workshop installs.
+-- v0.4 prioritizes Android/Unity writable storage, with desktop paths only as fallback.
 -- This probe does NOT intentionally remove the one-active-pet limit.
 
 local mod = GameMain:NewMod("XaouMultiPetProbe")
@@ -64,6 +64,20 @@ local function get_log_candidates()
 
     pcall(function()
         local IO = CS.System.IO
+
+        -- Mobile/Android first: Unity guarantees this is the app's writable data folder.
+        local persistent = CS.UnityEngine.Application.persistentDataPath
+        if persistent ~= nil and tostring(persistent) ~= "" then
+            result[#result + 1] = tostring(persistent)
+        end
+
+        -- Secondary writable Unity location.
+        local cache = CS.UnityEngine.Application.temporaryCachePath
+        if cache ~= nil and tostring(cache) ~= "" then
+            result[#result + 1] = tostring(cache)
+        end
+
+        -- Desktop/local-mod fallbacks are kept so the same probe still works on PC.
         local gameRoot = IO.Path.GetDirectoryName(CS.UnityEngine.Application.dataPath)
         local modsRoot = IO.Path.Combine(gameRoot, "Mods")
 
@@ -72,29 +86,8 @@ local function get_log_candidates()
             result[#result + 1] = localMod
         end
 
-        -- gameRoot = ...\\steamapps\\common\\AmazingCultivationSimulator
-        local commonRoot = IO.Path.GetDirectoryName(gameRoot)
-        local steamappsRoot = IO.Path.GetDirectoryName(commonRoot)
-        local workshopRoot = IO.Path.Combine(
-            IO.Path.Combine(
-                IO.Path.Combine(steamappsRoot, "workshop"),
-                "content"
-            ),
-            "955900"
-        )
-
-        local workshopMod = find_matching_child(workshopRoot)
-        if workshopMod ~= nil then
-            result[#result + 1] = workshopMod
-        end
-
         if IO.Directory.Exists(modsRoot) then
             result[#result + 1] = modsRoot
-        end
-
-        local persistent = CS.UnityEngine.Application.persistentDataPath
-        if persistent ~= nil and tostring(persistent) ~= "" then
-            result[#result + 1] = tostring(persistent)
         end
 
         result[#result + 1] = gameRoot
@@ -116,9 +109,11 @@ local function ensure_log_file()
             local p = IO.Path.Combine(dir, "XaouMultiPetProbe.log")
             IO.File.WriteAllText(
                 p,
-                "Xaou Multi Pet Probe v0.3\r\n"
+                "Xaou Multi Pet Probe v0.4\r\n"
                 .. "Started: " .. timestamp() .. "\r\n"
                 .. "LogPath: " .. tostring(p) .. "\r\n"
+                .. "PersistentDataPath: " .. safe_tostring(CS.UnityEngine.Application.persistentDataPath) .. "\r\n"
+                .. "DataPath: " .. safe_tostring(CS.UnityEngine.Application.dataPath) .. "\r\n"
                 .. "============================================================\r\n"
             )
             return p
@@ -470,7 +465,7 @@ end
 
 function mod:OnInit()
     ensure_log_file()
-    log("v0.3 loaded")
+    log("v0.4 loaded")
     if logFilePath ~= nil then
         log("Writing probe output to: " .. tostring(logFilePath))
     else
