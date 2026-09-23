@@ -1,6 +1,6 @@
--- Xaou Multi Pet Probe v0.8
+-- Xaou Multi Pet Probe v0.9
 -- Observes LingShouMgr when a pet statue is activated.
--- v0.8 experimentally preserves the previous pet with LingShouMgr:AddNpc2Running(npc, false).
+-- v0.9 invokes LingShouMgr non-public methods through reflection and restores the previous pet from its stone state after the new pet finishes spawning.
 -- Experimental Multi Pet test: uses the game's own running-pet API; no direct HashSet writes.
 
 local mod = GameMain:NewMod("XaouMultiPetProbe")
@@ -15,6 +15,10 @@ local watchElapsed = 0
 local watchSnapshot = nil
 local lastMainNpc = nil
 local MULTIPET_EXPERIMENT = true
+local pendingPreviousNpc = nil
+local pendingNewNpc = nil
+local pendingRestoreElapsed = 0
+local PENDING_RESTORE_TIMEOUT = 8.0
 
 local WATCH_FIELDS = {
     ["runningLss"] = true,
@@ -129,7 +133,7 @@ local function ensure_log_file()
             local p = IO.Path.Combine(dir, "XaouMultiPetProbe.log")
             IO.File.WriteAllText(
                 p,
-                "Xaou Multi Pet Probe v0.8\r\n"
+                "Xaou Multi Pet Probe v0.9\r\n"
                 .. "Started: " .. timestamp() .. "\r\n"
                 .. "LogPath: " .. tostring(p) .. "\r\n"
                 .. "PersistentDataPath: " .. safe_tostring(CS.UnityEngine.Application.persistentDataPath) .. "\r\n"
@@ -695,63 +699,179 @@ local function npc_id(npc)
     return safe_tostring(id)
 end
 
-local function preserve_previous_running(previousNpc, newNpc)
-    if not MULTIPET_EXPERIMENT then return end
-    if previousNpc == nil or newNpc == nil then return end
-    if previousNpc == newNpc then return end
+local function find_mgr_method(methodName, paramCount)
+    local t = get_type()
+    if t == nil then return nil end
 
-    local mgr = get_instance()
-    if mgr == nil then return end
-
-    log("=== MULTIPET switch detected ===")
-    log("  previous = " .. object_identity(previousNpc))
-    log("  new      = " .. object_identity(newNpc))
-    log("  running count before = " .. tostring(running_count()))
-    log("  previous already running = " .. tostring(running_contains(previousNpc)))
-
-    if not running_contains(previousNpc) then
-        local ok, err = pcall(function()
-            mgr:AddNpc2Running(previousNpc, false)
-        end)
-
-        if ok then
-            log("MULTIPET AddNpc2Running(previous, false) OK; npcID=" .. npc_id(previousNpc))
-        else
-            log("MULTIPET ERROR AddNpc2Running: " .. safe_tostring(err))
-        end
+    local flags = get_flags()
+    local ok, methods
+    if flags ~= nil then
+        ok, methods = pcall(function() return t:GetMethods(flags) end)
     else
-        log("MULTIPET previous pet was already in runningLss; no add needed")
+        ok, methods = pcall(function() return t:GetMethods() end)
+    end
+    if not ok or methods == nil then return nil end
+
+    for i = 0, methods.Length - 1 do
+        local m = methods[i]
+        if safe_tostring(m.Name) == methodName then
+            local okp, params = pcall(function() return m:GetParameters() end)
+            if okp and params ~= nil and params.Length == paramCount then
+                return m
+            end
+        end
+    end
+    return nil
+end
+
+local function invoke_mgr_method(methodName, args)
+    local mgr = get_instance()
+    if mgr == nil then
+        return false, nil, "LingShouMgr.Instance is nil"
     end
 
-    log("  running count after  = " .. tostring(running_count()))
-    log("  previous now running = " .. tostring(running_contains(previousNpc)))
+    args = args or {}
+    local m = find_mgr_method(methodName, #args)
+    if m == nil then
+        return false, nil, "method not found: " .. methodName .. "/" .. tostring(#args)
+    end
+
+    local ok, result = pcall(function()
+        local arr = CS.System.Array.CreateInstance(typeof(CS.System.Object), #args)
+        for i = 1, #args do
+            arr:SetValue(args[i], i - 1)
+        end
+        return m:Invoke(mgr, arr)
+    end)
+
+    if ok then
+        return true, result, nil
+    end
+    return false, nil, safe_tostring(result)
+end
+
+local function npc_key(npc)
+    if npc == nil then return 0 end
+    local k = safe_member(npc, "Key")
+    if k == nil then k = safe_member(npc, "key") end
+    return tonumber(k) or 0
+end
+
+local function schedule_previous_restore(previousNpc, newNpc)
+    pendingPreviousNpc = previousNpc
+    pendingNewNpc = newNpc
+    pendingRestoreElapsed = 0
+
+    log("=== MULTIPET switch detected; restore scheduled ===")
+    log("  previous = " .. object_identity(previousNpc))
+    log("  new      = " .. object_identity(newNpc))
+    log("  previous key = " .. tostring(npc_key(previousNpc)))
+    log("  new key      = " .. tostring(npc_key(newNpc)))
+    log("  waiting for new pet to finish spawning before restoring previous pet")
+end
+
+local function clear_pending_restore()
+    pendingPreviousNpc = nil
+    pendingNewNpc = nil
+    pendingRestoreElapsed = 0
+end
+
+local function process_pending_restore()
+    if not MULTIPET_EXPERIMENT then return end
+    if pendingPreviousNpc == nil or pendingNewNpc == nil then return end
+
+    pendingRestoreElapsed = pendingRestoreElapsed + WATCH_INTERVAL
+
+    local newKey = npc_key(pendingNewNpc)
+    if newKey <= 0 then
+        if pendingRestoreElapsed >= PENDING_RESTORE_TIMEOUT then
+            log("MULTIPET restore timeout: new pet never received a map Key")
+            clear_pending_restore()
+        end
+        return
+    end
+
+    local previous = pendingPreviousNpc
+    local newNpc = pendingNewNpc
+
+    log("=== MULTIPET restore begin ===")
+    log("  previous = " .. object_identity(previous))
+    log("  new      = " .. object_identity(newNpc))
+    log("  running count before = " .. tostring(running_count()))
+
+    if npc_key(previous) <= 0 then
+        local okFind, stoneData, findErr = invoke_mgr_method("FindStoneData", { previous })
+        if not okFind or stoneData == nil then
+            log("MULTIPET ERROR FindStoneData: " .. safe_tostring(findErr))
+            clear_pending_restore()
+            return
+        end
+
+        log("MULTIPET FindStoneData OK: " .. object_identity(stoneData))
+
+        local okReborn, _, rebornErr = invoke_mgr_method("RebornFromStone", { stoneData })
+        if not okReborn then
+            log("MULTIPET ERROR RebornFromStone: " .. safe_tostring(rebornErr))
+            clear_pending_restore()
+            return
+        end
+
+        log("MULTIPET RebornFromStone(previous) OK; key now=" .. tostring(npc_key(previous)))
+    else
+        log("MULTIPET previous pet is still on map; RebornFromStone not needed")
+    end
+
+    if not running_contains(previous) then
+        local okAdd, _, addErr = invoke_mgr_method("AddNpc2Running", { previous, false })
+        if okAdd then
+            log("MULTIPET reflection AddNpc2Running(previous, false) OK; npcID=" .. npc_id(previous))
+        else
+            log("MULTIPET ERROR reflection AddNpc2Running: " .. safe_tostring(addErr))
+        end
+    else
+        log("MULTIPET previous pet already exists in runningLss")
+    end
+
+    -- RebornFromStone can change the manager's main pet. Put the newly selected
+    -- pet back as main while keeping the previous one in runningLss.
+    local okMain, _, mainErr = invoke_mgr_method("set_runningLs", { newNpc })
+    if okMain then
+        log("MULTIPET main pet restored to newly selected npcID=" .. npc_id(newNpc))
+    else
+        log("MULTIPET WARN set_runningLs failed: " .. safe_tostring(mainErr))
+    end
+
+    log("  previous key after = " .. tostring(npc_key(previous)))
+    log("  new key after      = " .. tostring(npc_key(newNpc)))
+    log("  running count after = " .. tostring(running_count()))
+    log("  previous running    = " .. tostring(running_contains(previous)))
+    log("  new running         = " .. tostring(running_contains(newNpc)))
 
     local sorted = get_field_value("SortedRunningLss")
     if sorted ~= nil then
         log("  SortedRunningLss after = " .. snapshot_value(sorted))
     end
-    log("=== MULTIPET switch handling end ===")
+
+    log("=== MULTIPET restore end ===")
+    clear_pending_restore()
 end
 
 local function multi_pet_step()
     if not MULTIPET_EXPERIMENT then return end
 
     local current = get_main_running()
-    if current == nil then
-        return
+    if current ~= nil then
+        if lastMainNpc == nil then
+            lastMainNpc = current
+            log("MULTIPET main initialized: " .. object_identity(current))
+        elseif current ~= lastMainNpc and pendingPreviousNpc == nil then
+            local previous = lastMainNpc
+            lastMainNpc = current
+            schedule_previous_restore(previous, current)
+        end
     end
 
-    if lastMainNpc == nil then
-        lastMainNpc = current
-        log("MULTIPET main initialized: " .. object_identity(current))
-        return
-    end
-
-    if current ~= lastMainNpc then
-        local previous = lastMainNpc
-        lastMainNpc = current
-        preserve_previous_running(previous, current)
-    end
+    process_pending_restore()
 end
 
 local function snapshot_watch_fields()
@@ -880,7 +1000,7 @@ end
 
 function mod:OnInit()
     ensure_log_file()
-    log("v0.8 loaded")
+    log("v0.9 loaded")
     if logFilePath ~= nil then
         log("Writing probe output to: " .. tostring(logFilePath))
     else
@@ -895,6 +1015,7 @@ function mod:OnAfterLoad()
     watchSnapshot = nil
     watchElapsed = 0
     lastMainNpc = nil
+    clear_pending_restore()
     poll_active_pet_watch()
     multi_pet_step()
 end
