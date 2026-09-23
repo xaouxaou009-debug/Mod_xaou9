@@ -1,9 +1,9 @@
 {
   "Name": "XaouMultiPetProbe",
   "DisplayName": "Xaou - Multi Pet Probe",
-  "Desc": "เครื่องมือทดลองตรวจระบบสัตว์เลี้ยงหลายตัวสำหรับ Android เฝ้าค่า active-pet ใน LingShouMgr โดยตรงและบันทึกเฉพาะตอนสถานะเปลี่ยน ไม่ต้องพึ่งการดักคำสั่งรูปปั้น",
+  "Desc": "เครื่องมือทดลองตรวจระบบสัตว์เลี้ยงหลายตัวสำหรับ Android เฝ้าค่า active-pet และตรวจ API ของ runningLss/SortedRunningLss พร้อม method signature ที่เกี่ยวข้อง เพื่อหาวิธีปลดลิมิตหลายตัวอย่างปลอดภัย",
   "GameVersion": 0.95,
-  "Version": 6,
+  "Version": 7,
   "Author": "Xaou",
   "Sort": "99999"
 }
