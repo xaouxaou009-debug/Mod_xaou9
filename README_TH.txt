@@ -1,34 +1,34 @@
-Xaou - Multi Pet Probe v0.3
+Xaou - Multi Pet Probe v0.4
 ===========================
 
-เป้าหมาย
-- ตรวจว่าตอนเรียกสัตว์เลี้ยงผ่านรูปปั้น LingShouMgr เปลี่ยนฟิลด์ใด
-- ตรวจค่าภายใน List / Dictionary / Array
-- ใช้หาจุดที่เกมเก็บ "สัตว์เลี้ยงที่ Active อยู่" เพื่อทำ Multi Pet ตัวจริงต่อ
-- เวอร์ชันนี้ยังไม่ปลดลิมิตสัตว์เลี้ยง
+เวอร์ชันนี้แก้สำหรับการทดสอบบนมือถือ/Android
 
-ไฟล์ Log
-ม็อดจะสร้างไฟล์ชื่อ:
+ตำแหน่ง Log
+ม็อดจะพยายามสร้าง:
 XaouMultiPetProbe.log
 
-v0.3 แก้การค้นหาโฟลเดอร์ให้รองรับทั้ง:
-1) AmazingCultivationSimulator\Mods\<โฟลเดอร์ม็อด>
-2) Steam Workshop: steamapps\workshop\content\955900\<Workshop ID>
-3) ถ้าสองตำแหน่งแรกเขียนไม่ได้ จะลองโฟลเดอร์ Mods
-4) ถ้ายังไม่ได้ จะลอง Unity persistentDataPath
-5) สุดท้ายจึงลองโฟลเดอร์เกม
+ลำดับตำแหน่งที่ลองเขียน:
+1) Unity Application.persistentDataPath
+2) Unity Application.temporaryCachePath
+3) โฟลเดอร์ม็อด/Mods แบบ PC เป็น fallback
+
+บน Android ให้ค้นชื่อไฟล์:
+XaouMultiPetProbe.log
+
+ด้วย MT Manager หรือ file manager ที่เข้าถึงโฟลเดอร์ข้อมูลแอปได้
+ตำแหน่งจริงขึ้นกับแอป/ตัวรันที่ใช้ จึงไม่ hard-code package name
+
+ภายในหัวไฟล์จะบันทึก:
+- LogPath
+- PersistentDataPath
+- DataPath
 
 วิธีทดสอบ
-1) อัปเดตม็อดเป็น Version 3
+1) อัปเดตม็อดเป็น Version 4
 2) ปิดเกมแล้วเปิดใหม่
-3) เปิดม็อดและโหลดเซฟ
+3) โหลดเซฟ
 4) เรียกสัตว์เลี้ยงตัวแรกจากรูปปั้น
 5) เรียกสัตว์เลี้ยงตัวที่สอง
-6) ค้นหาไฟล์ XaouMultiPetProbe.log
-7) ส่งไฟล์นั้นมาให้ตรวจได้เลย
+6) ค้น XaouMultiPetProbe.log แล้วส่งมาให้ตรวจ
 
-ถ้าเจอไฟล์แล้ว ภายในบรรทัดต้น ๆ จะมี LogPath บอกตำแหน่งจริงที่เกมเขียนไฟล์ไว้
-
-หมายเหตุ
-Settings/CommandDef/XaouMultiPetProbe.xml override เฉพาะ GoToActiveLcBuild
-และเรียก LingShouMgr.Instance:ActiveLcBuild(it) ของเกมเดิมต่อหลัง snapshot
+ตัว Probe ยังไม่ปลดลิมิตสัตว์เลี้ยง มีไว้เก็บข้อมูลก่อนทำ Multi Pet ตัวจริง
