@@ -1,6 +1,6 @@
--- Xaou Multi Pet Probe v0.5
+-- Xaou Multi Pet Probe v0.6
 -- Observes LingShouMgr when a pet statue is activated.
--- v0.5 keeps Android writable storage and replaces AppendAllText with a WriteAllText-safe logger.
+-- v0.6 watches the active-pet fields directly, so it no longer depends on the statue command hook.
 -- This probe does NOT intentionally remove the one-active-pet limit.
 
 local mod = GameMain:NewMod("XaouMultiPetProbe")
@@ -10,6 +10,24 @@ local MAX_COLLECTION_ITEMS = 32
 local dumpedStructure = false
 local logFilePath = nil
 local logFileReady = false
+local WATCH_INTERVAL = 0.5
+local watchElapsed = 0
+local watchSnapshot = nil
+
+local WATCH_FIELDS = {
+    ["runningLss"] = true,
+    ["SortedRunningLss"] = true,
+    ["<runningLs>k__BackingField"] = true,
+    ["waitSwitchNpc"] = true,
+    ["<waitBornNpc>k__BackingField"] = true,
+    ["bd2Npc"] = true,
+    ["raceLs"] = true,
+    ["LsNpcs"] = true,
+    ["lsData"] = true,
+    ["raceLsData"] = true,
+    ["CLAER_T_IF_CHANGE_BUILD"] = true,
+    ["ForceStepImmediately"] = true,
+}
 
 local function safe_tostring(v)
     if v == nil then return "<nil>" end
@@ -109,7 +127,7 @@ local function ensure_log_file()
             local p = IO.Path.Combine(dir, "XaouMultiPetProbe.log")
             IO.File.WriteAllText(
                 p,
-                "Xaou Multi Pet Probe v0.5\r\n"
+                "Xaou Multi Pet Probe v0.6\r\n"
                 .. "Started: " .. timestamp() .. "\r\n"
                 .. "LogPath: " .. tostring(p) .. "\r\n"
                 .. "PersistentDataPath: " .. safe_tostring(CS.UnityEngine.Application.persistentDataPath) .. "\r\n"
@@ -433,6 +451,92 @@ local function log_changes(before, after)
     end
 end
 
+local function snapshot_watch_fields()
+    local values = {}
+    local inst = get_instance()
+    local fields = get_fields()
+    if inst == nil or fields == nil then return values end
+
+    for i = 0, fields.Length - 1 do
+        local f = fields[i]
+        local name = safe_tostring(f.Name)
+        if WATCH_FIELDS[name] then
+            local ok, value = pcall(function() return f:GetValue(inst) end)
+            if ok then
+                values[name] = snapshot_value(value)
+            else
+                values[name] = "<read-error>"
+            end
+        end
+    end
+
+    return values
+end
+
+local function log_watch_snapshot(prefix, snap)
+    local names = {
+        "runningLss",
+        "SortedRunningLss",
+        "<runningLs>k__BackingField",
+        "waitSwitchNpc",
+        "<waitBornNpc>k__BackingField",
+        "bd2Npc",
+        "raceLs",
+        "LsNpcs",
+        "lsData",
+        "raceLsData",
+        "CLAER_T_IF_CHANGE_BUILD",
+        "ForceStepImmediately",
+    }
+
+    log(prefix)
+    for _, name in ipairs(names) do
+        if snap[name] ~= nil then
+            log("  " .. name .. " = " .. safe_tostring(snap[name]))
+        end
+    end
+end
+
+local function poll_active_pet_watch()
+    local now = snapshot_watch_fields()
+
+    if watchSnapshot == nil then
+        watchSnapshot = now
+        log_watch_snapshot("=== WATCH INITIAL active-pet state ===", now)
+        return
+    end
+
+    local changed = false
+    for name, oldv in pairs(watchSnapshot) do
+        local newv = now[name]
+        if newv ~= oldv then
+            if not changed then
+                log("=== WATCH CHANGE detected ===")
+                changed = true
+            end
+            log("WATCH CHANGED " .. name)
+            log("  BEFORE: " .. safe_tostring(oldv))
+            log("  AFTER : " .. safe_tostring(newv))
+        end
+    end
+
+    for name, newv in pairs(now) do
+        if watchSnapshot[name] == nil then
+            if not changed then
+                log("=== WATCH CHANGE detected ===")
+                changed = true
+            end
+            log("WATCH ADDED " .. name .. " = " .. safe_tostring(newv))
+        end
+    end
+
+    if changed then
+        log("=== WATCH CHANGE end ===")
+    end
+
+    watchSnapshot = now
+end
+
 local function get_statue_name(it)
     local statueName = "<unknown>"
     pcall(function()
@@ -473,7 +577,7 @@ end
 
 function mod:OnInit()
     ensure_log_file()
-    log("v0.5 loaded")
+    log("v0.6 loaded")
     if logFilePath ~= nil then
         log("Writing probe output to: " .. tostring(logFilePath))
     else
@@ -482,6 +586,23 @@ function mod:OnInit()
 end
 
 function mod:OnAfterLoad()
-    log("save/map loaded; waiting for pet statue activation")
+    log("save/map loaded; direct active-pet watch enabled")
     dump_structure_once()
+    watchSnapshot = nil
+    watchElapsed = 0
+    poll_active_pet_watch()
+end
+
+function mod:OnStep(dt)
+    local n = tonumber(dt) or 0
+    watchElapsed = watchElapsed + n
+    if watchElapsed < WATCH_INTERVAL then return end
+    watchElapsed = 0
+
+    local ok, err = pcall(function()
+        poll_active_pet_watch()
+    end)
+    if not ok then
+        log("WATCH ERROR: " .. safe_tostring(err))
+    end
 end
