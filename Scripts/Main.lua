@@ -1,6 +1,6 @@
--- Xaou Multi Pet Probe v0.6
+-- Xaou Multi Pet Probe v0.7
 -- Observes LingShouMgr when a pet statue is activated.
--- v0.6 watches the active-pet fields directly, so it no longer depends on the statue command hook.
+-- v0.7 inspects the active-pet container API and relevant LingShouMgr method signatures.
 -- This probe does NOT intentionally remove the one-active-pet limit.
 
 local mod = GameMain:NewMod("XaouMultiPetProbe")
@@ -127,7 +127,7 @@ local function ensure_log_file()
             local p = IO.Path.Combine(dir, "XaouMultiPetProbe.log")
             IO.File.WriteAllText(
                 p,
-                "Xaou Multi Pet Probe v0.6\r\n"
+                "Xaou Multi Pet Probe v0.7\r\n"
                 .. "Started: " .. timestamp() .. "\r\n"
                 .. "LogPath: " .. tostring(p) .. "\r\n"
                 .. "PersistentDataPath: " .. safe_tostring(CS.UnityEngine.Application.persistentDataPath) .. "\r\n"
@@ -368,6 +368,176 @@ local function snapshot_fields()
     return values
 end
 
+local function method_signature(m)
+    local parts = {}
+    local okParams, params = pcall(function() return m:GetParameters() end)
+    if okParams and params ~= nil then
+        for i = 0, params.Length - 1 do
+            local p = params[i]
+            local pt = "?"
+            local pn = "?"
+            pcall(function() pt = safe_tostring(p.ParameterType) end)
+            pcall(function() pn = safe_tostring(p.Name) end)
+            parts[#parts + 1] = pt .. " " .. pn
+        end
+    end
+
+    local rt = "?"
+    pcall(function() rt = safe_tostring(m.ReturnType) end)
+    return safe_tostring(m.Name) .. "(" .. table.concat(parts, ", ") .. ") -> " .. rt
+end
+
+local function dump_runtime_type(label, value)
+    if value == nil then
+        log("RUNTIME " .. label .. " = <nil>")
+        return
+    end
+
+    local okType, t = pcall(function() return value:GetType() end)
+    if not okType or t == nil then
+        log("RUNTIME " .. label .. " type unavailable")
+        return
+    end
+
+    log("=== RUNTIME TYPE " .. label .. " :: " .. safe_tostring(t.FullName) .. " ===")
+
+    local flags = get_flags()
+
+    local okFields, fields
+    if flags ~= nil then
+        okFields, fields = pcall(function() return t:GetFields(flags) end)
+    else
+        okFields, fields = pcall(function() return t:GetFields() end)
+    end
+
+    if okFields and fields ~= nil then
+        for i = 0, fields.Length - 1 do
+            local f = fields[i]
+            local fv = "<unread>"
+            pcall(function() fv = snapshot_value(f:GetValue(value)) end)
+            log("RUNTIME FIELD " .. safe_tostring(f.Name) .. " :: " .. safe_tostring(f.FieldType) .. " = " .. fv)
+        end
+    end
+
+    local okProps, props
+    if flags ~= nil then
+        okProps, props = pcall(function() return t:GetProperties(flags) end)
+    else
+        okProps, props = pcall(function() return t:GetProperties() end)
+    end
+
+    if okProps and props ~= nil then
+        for i = 0, props.Length - 1 do
+            local p = props[i]
+            local pv = "<unread>"
+            if p:GetIndexParameters().Length == 0 then
+                pcall(function() pv = snapshot_value(p:GetValue(value, nil)) end)
+            end
+            log("RUNTIME PROP " .. safe_tostring(p.Name) .. " :: " .. safe_tostring(p.PropertyType) .. " = " .. pv)
+        end
+    end
+
+    local okMethods, methods
+    if flags ~= nil then
+        okMethods, methods = pcall(function() return t:GetMethods(flags) end)
+    else
+        okMethods, methods = pcall(function() return t:GetMethods() end)
+    end
+
+    if okMethods and methods ~= nil then
+        local seen = {}
+        for i = 0, methods.Length - 1 do
+            local m = methods[i]
+            local n = string.lower(safe_tostring(m.Name))
+            if string.find(n, "add", 1, true)
+                or string.find(n, "remove", 1, true)
+                or string.find(n, "clear", 1, true)
+                or string.find(n, "count", 1, true)
+                or string.find(n, "contains", 1, true)
+                or string.find(n, "get", 1, true)
+                or string.find(n, "set", 1, true)
+                or string.find(n, "sort", 1, true)
+                or string.find(n, "enum", 1, true) then
+                local sig = method_signature(m)
+                if not seen[sig] then
+                    seen[sig] = true
+                    log("RUNTIME METHOD " .. sig)
+                end
+            end
+        end
+    end
+
+    log("=== RUNTIME TYPE END " .. label .. " ===")
+end
+
+local function dump_lingshou_method_signatures()
+    local t = get_type()
+    if t == nil then return end
+
+    local flags = get_flags()
+    local ok, methods
+    if flags ~= nil then
+        ok, methods = pcall(function() return t:GetMethods(flags) end)
+    else
+        ok, methods = pcall(function() return t:GetMethods() end)
+    end
+    if not ok or methods == nil then return end
+
+    log("=== LingShouMgr relevant method signatures ===")
+    local seen = {}
+    for i = 0, methods.Length - 1 do
+        local m = methods[i]
+        local n = string.lower(safe_tostring(m.Name))
+        if string.find(n, "run", 1, true)
+            or string.find(n, "active", 1, true)
+            or string.find(n, "switch", 1, true)
+            or string.find(n, "born", 1, true)
+            or string.find(n, "stone", 1, true)
+            or string.find(n, "build", 1, true)
+            or string.find(n, "remove", 1, true) then
+            local sig = method_signature(m)
+            if not seen[sig] then
+                seen[sig] = true
+                log("SIG " .. sig)
+            end
+        end
+    end
+    log("=== LingShouMgr relevant signatures end ===")
+end
+
+local function dump_active_container_api()
+    local inst = get_instance()
+    if inst == nil then
+        log("ERROR: cannot inspect active container; LingShouMgr.Instance is nil")
+        return
+    end
+
+    local t = get_type()
+    local flags = get_flags()
+    local fields = nil
+    pcall(function()
+        if flags ~= nil then fields = t:GetFields(flags) else fields = t:GetFields() end
+    end)
+    if fields == nil then return end
+
+    for i = 0, fields.Length - 1 do
+        local f = fields[i]
+        local name = safe_tostring(f.Name)
+        if name == "runningLss"
+            or name == "SortedRunningLss"
+            or name == "<runningLs>k__BackingField"
+            or name == "waitSwitchNpc"
+            or name == "<waitBornNpc>k__BackingField" then
+            local okValue, value = pcall(function() return f:GetValue(inst) end)
+            if okValue then
+                dump_runtime_type(name, value)
+            end
+        end
+    end
+
+    dump_lingshou_method_signatures()
+end
+
 local function dump_structure_once()
     if dumpedStructure then return end
     dumpedStructure = true
@@ -577,7 +747,7 @@ end
 
 function mod:OnInit()
     ensure_log_file()
-    log("v0.6 loaded")
+    log("v0.7 loaded")
     if logFilePath ~= nil then
         log("Writing probe output to: " .. tostring(logFilePath))
     else
@@ -588,6 +758,7 @@ end
 function mod:OnAfterLoad()
     log("save/map loaded; direct active-pet watch enabled")
     dump_structure_once()
+    dump_active_container_api()
     watchSnapshot = nil
     watchElapsed = 0
     poll_active_pet_watch()
